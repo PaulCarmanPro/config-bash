@@ -1,0 +1,427 @@
+#!/usr/bin/bash
+# ~/.bashrc.alias -- included by ~/.bashrc
+# by Paul Carman -- copyleft
+
+# shellcheck disable=SC2155 # Declare and assign separately to avoid masking return values.
+
+# mind aliases/functions when creating them
+# use $what to see the definition of a command
+
+[ dumb != "$TERM" ] && tabs 4 # change tab stop from 8
+
+apt-cache() {
+   case "$1" in
+      search) /bin/apt-cache "$@" | sort -V | grep -E "($(printf '%s|' "${@:2}")|\$)" ;;
+      *) /bin/apt-cache "$@"
+   esac
+}
+
+alias bye='systemctl suspend'
+
+
+cal() { # compressed/highlighted calendar if vertical
+   # ncal -b produces original broad cal output
+   if [[ "$*" =~ '-b' ]]; then
+      /bin/ncal "$@"
+   else # this code does not handle horizontal -b output
+      # first month does not need compressed
+      # each day is given space for two digits unless in first row of month
+      # month name starts on same column as single digit
+      # number of spaces between months varies
+      # ncal outputs a seven line rectangle
+      # pty inserts carriage return (0x0d) before each newline (0x0a).
+      local zColorCode=$'\x1b[^m]+m'
+      local zDayNum="($zColorCode)?[ 0-9][0-9]($zColorCode)?"
+      local zDayName="($zColorCode..$zColorCode|..)"
+      local zBetweenMonthsInclusive="([0-9])   +( $zDayNum )"
+      local zMonthTitle='([[:alpha:]]+ [0-9]{4})'
+      pty /bin/ncal -A1 -B1 "$@" \
+         | tr -d '\r' \
+         | sed -E "#
+; s:$zBetweenMonthsInclusive:\1\2:g
+; s:^ *($zMonthTitle):\1:
+; s:(  ( *$zMonthTitle)):\2:g
+; s:($zMonthTitle) *$:\1:
+; s:^(..)(.*($zColorCode).*($zColorCode).*):\3\1\4\2:
+; s:^$zDayName(.*) $:\1\2\1:
+; s:( [0-9][0-9])\1:\1:g
+"
+      # remove extra space between months
+      # remove space before month title (misaligns titles)
+      # remove extra space between month titles (misaligns titles)
+      # remove spaces after moth titles
+      # highlight current day of week
+      # copy day of week to end of line
+      # remove duplicate week numbers (if -w is used)
+   fi
+}
+alias calligra='QT_SCALE_FACTOR=2 calligra'
+alias calligrasheets='QT_SCALE_FACTOR=2 calligrasheets'
+colors() {
+	for i in {0..255}; do
+		echo "$(tput setaf "$i")tput setaf $i$(tput sgr0)"
+	done
+}
+alias cp='cp --archive --one-file-system --interactive --verbose'
+
+depends() { # list recursive package dependencies
+  # may use apt-cache rdepends to list reverse dependencies
+  apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances "$@" | grep "^\w" | sort -u
+}
+alias dd='sudo dd bs=8M status=progress'
+df() { # sort output leaving header line
+	/usr/bin/df --human-readable \
+               --output=target,fstype,size,pcent,avail,source "$@" \
+		| awk 'NR<2{print $0;next}{print $0|"sort"}END{close("sort")}'
+}
+dict() { # use aspell if not found in dictionary
+	local zDef
+   if zDef=$(/bin/dict "$@" 2>/dev/null); then
+      # emacs Shell mode reports syntax error
+      less --force <(printf '%s' "$zDef") # why is --force required ???
+   else
+	   tput setaf 15
+	   aspell pipe <<< "$@" | tail -n +2 | sed '1s/.*: //'
+	   tput sgr0
+   fi
+}
+alias du='du --total --human-readable --summarize'
+
+enscript() { # proper use enscript probably uses configuration files
+   local zOptions
+   while [[ - = "${1:0:1}" ]]; do
+      zOptions+=("$1")
+      shift
+   done
+	for zText in "$@"; do
+      # do not reprocess a pdf or ps
+      [[ "$zText" =~ .*"."(pdf|ps) ]] && continue
+		/usr/bin/enscript \
+			--font="Courier@12/11" \
+			--header="\$n|%W|Page \$% of \$=" \
+			--margins=40:40:30:40 \
+			--non-printable-format=caret \
+			--output "$zText.ps" \
+			--tabsize=3 \
+			--word-wrap \
+         "${zOptions[@]}" \
+			"$zText" \
+			&& ps2pdf "$zText.ps" \
+         && /usr/bin/rm -f "$zText.ps"
+	done
+}
+
+feh() {
+   # --process-id %V is probably obtainable from predefined constant $PPID.
+   # --fullscren prohibits window resizing (keyboard shortcut f)
+   /bin/feh \
+      --action ';fehaction --filename %F --filelist %L --filelist-count %l --image-format %t --filelist-index %u --image-height %h --image-width %w --image-size-human %S --process-id %V' \
+      --auto-zoom \
+      --borderless \
+      --draw-tinted \
+      --edit \
+      --font DejaVuSansMono/16 \
+      --fontpath /usr/share/fonts/truetype/dejavu \
+      --force-aliasing \
+      --fullscreen \
+      --info "fehaction --info  -F %F" \
+      --insecure \
+      --image-bg checks \
+      --keep-http \
+      --no-jump-on-resort \
+      --scale-down \
+      --sort=filename "$@"
+}
+ff() { # play a list of songs with -autoexit
+   readarray -t -d '' zSongs \
+             < <(find "$@" -type f -print0 | sort -Vz)
+   printf '%s\n' "${zSongs[@]}"
+   for zSong in "${zSongs[@]}"; do
+      /bin/ffplay -autoexit -v quiet "$zSong"
+   done
+}
+alias ffcd='cd "$(dirname "$(fflog)")"'
+alias ffhide='mv -v "$(fflog)" "$(dirname "$(fflog)")/.$(basename "$(fflog)")"'
+alias ffmpeg='ffmpeg -v fatal -stats'
+alias ffplay='ffplay -v 24 -stats'
+alias ffprobe='ffprobe -hide_banner'
+find() {
+   /usr/bin/find \
+      -L "$1" \
+      -xdev \
+      -regextype posix-extended \
+      "${@:2}"
+}
+
+alias grep='grep --color=always --extended-regexp --text'
+groups() {
+	id --groups --name "$USER" | tr ' ' $'\n' | sort --version-sort | tr $'\n' ' ' | sed 's/ $/\n/'
+}
+
+identify() {
+   if [[ 1 -eq "$#" ]]; then
+      echo "Shortened output... @see what identify..."
+      /usr/bin/identify -verbose "$@" | head -13
+   else
+      /usr/bin/identify "$@"
+   fi
+}
+alias inxi='inxi -v8' # maximum verbosity
+iotop() {
+   # setting NET_ADMIN does NOT work as described
+   sudo /sbin/iotop --accumulated --delay 3 --only
+}
+ip() {
+   if [[ 0 -eq $# ]]; then
+      /usr/bin/ip addr | sed -E ':a ; s/^[[:digit:]]+: ([^:]+:) (<[^>]+>)(.*( [[:upper:]]+))*.*/\1\4 \2/ ; :b ; N ; s/\n[[:space:]]+inet( [^ ]+).*$/\1/ ; tb ; s/\n[[:space:]]+.*$// ; tb ; P ; s/.*\n// ; ba'
+   else
+      /usr/bin/ip "$@"
+   fi
+}
+alias journalctl='journalctl --reverse'
+
+l() {
+	# cause hidden files to be listed first and hide the totalsize
+   # FUTURE : put the total between the hidden files and the visible files
+	# shellcheck disable=SC2012 # Use find instead of ls to better handle non-alphanumeric filenames.
+	# shellcheck disable=SC2016 # Expressions don't expand in single quotes, use double quotes for that.
+	/bin/ls \
+		--almost-all \
+		--classify \
+      --color \
+      --dereference-command-line-symlink-to-dir \
+		--format=long \
+      --group-directories-first \
+		--human-readable \
+      --indicator-style=file-type \
+		--time-style="+%y.%m.%d-%H.%M" "$@" \
+      -v \
+		| sed -nE '/^total.*/d ; /^([^[:blank:]]+[[:blank:]]+){6}(\x1b\[[^m]+m)*\./{p;b 1} ; H ; :1 ${g;s/^\n//;p}'
+}
+latex() {
+	# zText.toc is ALWAYS one compilation behind
+	# consider comparison of old/new zText.toc for automatic rebuild when table of contents changes
+	for zText in "$@"; do
+		zText="${zText%.ltx}"
+		# old-compilation buffers can cause new-compilation issues
+		rm -f "$zText.aux"
+		# /bin/pdflatex "%@" | sed -e :A -e 's/([^()]*)//;tA' -e 's/  / /g'
+		# -aux-directory=DIR
+		pdflatex -output-directory=/tmp "$zText.ltx"
+		# this creates a dvi | ps | pdf -- consider pdflatex
+		#/usr/bin/latex "$zText.ltx" \
+		#	&& dvips "$zText.dvi" \
+		#	&& ps2pdf  "$zText.ps"
+		mv -f "/tmp/$(basename "$zText").pdf" "$(dirname "$zText")"
+	done
+}
+alias less='less --RAW-CONTROL-CHARS' # assist in color display, but less complains
+lpoptions() {
+   if [[ 0 = "$#" ]]; then
+      # list one option per line instead of long space separated list
+      printf '%s' "
+-o collate true|false
+-o media Letter
+
+"
+      /usr/bin/lpoptions | sed -E 's/([^\]) ([^ ]+=)/\1\n\2/g'
+   else
+      /usr/bin/lpoptions "$@"
+   fi
+}
+alias lpstat='lpstat -l'
+alias ls='ls \
+--color \
+--format=vertical \
+--group-directories-first \
+--indicator-style=file-type \
+-v'
+alias lsblk='lsblk \
+-o FSTYPE,SIZE,FSUSED,NAME,LABEL,MOUNTPOINT,PARTLABEL'
+lsusb() { # hide all the hubs from the basic list
+   if [[ 0 = "$#" ]]; then
+      /usr/bin/lsusb | grep -v '.*[Hh]ub'
+   else
+      /usr/bin/lsusb "$@"
+   fi
+}
+
+manp() { # MODULE[.TOPIC] or TOPIC
+   case $# in
+      1) python3 <(cat <<EOF
+try: import ${1%%.*}
+except Exception: pass
+help('$1')
+EOF
+                  ) ;;
+      *) >&2 echo "manp MODULE[.TOPIC] or TOPIC"
+         return 1
+   esac
+}
+alias mkfs.ext4='mkfs.ext4 -z ""' # create an undo file default called mke2fs-device.e2undo for e2undo.
+alias more='less'
+mountpoint() { # DIR... # CODE is DIR count not found
+   # look up the actual mounted /dev file
+   local -i zCode=0 # /bin/mountpoint returns code 1 if not found
+   local zFsdev zDir
+   for zDir in "$@"; do
+      # color 68 should come from tr ':' '\n' <<< "$LS_COLORS" | sed -nE '/bd=.*/{p;q}'
+      local zName="$(tput setaf 68)$zDir$(tput sgr0)"
+      [[ -h "$zDir" ]] \
+         && zName+=" $(tput setaf 11)-> $(realpath "$zDir")$(tput sgr0)"
+      if zFsdev=$(/bin/mountpoint --fs-devno "$zDir") && [[ "$zFsdev" ]]; then
+         printf '%s ' "$zName"
+         local zDriverId=$(cut -d: -f1 <<< "$zFsdev") # 'file system' uniques a driver
+         local zDeviceId=$(cut -d: -f2 <<< "$zFsdev") # 'device number' is used by the driver to unique a device
+         # shellcheck disable=SC2012 # use find instead of ls
+         local zEntry=$(ls -la /dev | sed -nE "s/^([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+($zDriverId,[[:space:]]*${zDeviceId}[[:space:]]+)(.*)/\1 \2 \3 \4 $zFsdev \6/p")
+         if [[ "$zEntry" ]]; then
+            printf '%s\n' "$zEntry"
+         else
+            printf '%s\n' "$zFsdev virtual device"
+         fi
+      else
+         zCode+=1
+      fi
+   done
+   return $zCode
+}
+alias mp='mountpoint'
+alias mp3gain='mp3gain -kpor -sr' # lower gain to avoid clip, output list, preserve timestamp, rewrite mp3, set recalculation flag
+alias mupdf='mupdf 2>/dev/null -r 230'
+alias mutt='neomutt'
+alias mv='mv --interactive --verbose'
+
+neomutt() {
+   export ESCDELAY=0 # default 1000, but now used instead of ^g
+   /usr/bin/neomutt
+}
+alias netstat='netstat --protocol=inet --program --timers'
+
+alias pgrep='pgrep --list-full'
+alias ping='ping -v -c6'
+pman() { # python man
+	f="/usr/lib/python3.10/$1.py"
+	if [[ -e "$f" ]]; then
+		x "$f"
+	else
+		>&2 echo "Did not find ${f@Q}."
+		return 1
+	fi
+}
+ps() {
+	# @@@ REASSIGN -a TO EXCLUDE THE grep @@@
+	# list processes with job and heirichael information
+   # shellcheck disable=SC2016 # don't bitch about use of asterisk inside single quotes
+   [[ 0 -ne $# ]] \
+      && echo '# [...] entries are hidden while rest are chopped @see `what ps`'
+   local zo
+   # shellcheck disable=SC2199 # arrays implicitly concatenate
+   [[ " ${@}" =~ " -o" ]] \
+      && unset zo \
+         || zo="-o user,pid,ppid,pgid,tty,cmd"
+   # shellcheck disable=SC2086 # double quote to prevent word splitting
+	/bin/ps -H $zo "$@" \
+      | cut -c -$(($(tput cols) - 1)) \
+      | grep -vE '\[.+\]'
+   # -H Show process hierarchy
+}
+alias py='python3' # python lacks the ability to use the latest
+
+alias rm='rm --interactive --one-file-system --recursive --verbose'
+alias rsync='rsync --archive --itemize-changes' # --checksum fixes date issues with vfat destination
+
+scan() {
+   if [[ 0 -eq $# ]]; then
+      echo 'scanimage FILENAME
+.PBM for black-and-white (--mode Lineart) (do not use -- looks like shit and produces a pnm anyway)
+.PGM for grayscale (--mode Gray)
+.PPM for color (--mode Color)
+.TIFF|.PNG|.JPEG (compression level 75)'
+      /usr/bin/scanimage --all-options --dont-scan
+   else
+      # need to use the lesser arguments too
+      /usr/bin/scanimage --progress --resolution 300 -y 280 --mode=Gray --format=pnm -o ${!#}.pgm
+   fi
+}
+alias screenshot='scrot --select --quality 100'
+alias sed='sed -E'
+alias shutdown='shutdown +0' # immediate
+alias slimjet='flashpeak-slimjet' # must use startup script
+
+alias top='htop' # pcp top is supposed to be configurable?
+alias tree='tree -aChv --du' # list all with human readable sizes accumulated for directories
+alias traceroute='traceroute -n' # do not attempt to resolve DNS on every router
+alias uptime='uptime --since'
+alias unit='units -v1'
+
+what() {
+   local zNotFound=1
+   grep -Fxq "$1" <(compgen -b) \
+      && printf "Bash built-in %s\n" "$(help "$1")" \
+      && zNotFound=0
+	if [[ "$1" = *'*'* ]]; then # do NOT allow this -- update completion routines instead
+		# the -P ignores all links, which is good for /bin and /sbin,, but bad at ~/,local/bin
+		IFS=:; # shellcheck disable=SC2086
+      find -L $PATH -maxdepth 1 -type f -name "$@" 2>/dev/null | sort; unset IFS
+	else
+      local zAns
+      zAns=$(declare -f "$1") \
+         && printf 'Bash function %s\n' "$zAns" \
+         && zNotFound=0
+      zAns=$(alias "$1" 2>/dev/null) \
+         && printf 'Bash %s\n' "$zAns" \
+         && zNotFound=0
+      while read -r zHeader zWhereIsArg; do
+		   zAns=$(whereis "$zWhereIsArg" "$1") \
+            && [[ "${zAns/$1:}" ]] \
+            && printf '%s%s\n' "$zHeader" "${zAns/$1}" \
+            && zNotFound=0
+      # done <<< $'-b Executables\n-s Sources\n-m Manuals'
+      done <<< $'+x -b\n-man -m\ncode -s' # argument_to_send_to_whereis_calculates_value text_header_for_calculated_value  
+      zAns=$(whatis "$1" 2>/dev/null | tr -s ' ') \
+         && [[ "$zAns" ]] \
+         && printf '%s\n' "$zAns" \
+         && zNotFound=0 # whatis does not produce an error code
+      return $zNotFound
+	fi
+}
+alias wget='wget --continue --convert-links --force-directories --limit-rate=20K --mirror --no-parent --tries=3 --user-agent=Mozilla --wait=20 --xattr' # --domains= to limit source
+# --force-directories = use option -f when executing mkdir
+# --limit-rate = bandwidth niceness
+# --mirror = recursively download and timestamp (-r -N -l inf --no-remove-listing)
+# --no-parent = do not ascent hierarchy
+# --user-agent = identify myself as Mozilla for trickery
+# --wait = niceness pause between retrievals
+# --xattr = store URL and the Referer HTTP header value (if used) in file's extended attributes
+
+x4() { # image file to quad size
+	zImage="$1"
+	zBase=$(basename "$zImage")
+	zName=${zBase%.*}
+	zExt=${zBase#"$zName"}
+	zNew="$(dirname "$zImage")/$zName.4$zExt"
+	set -x > /dev/null
+	montage "$zImage" "$zImage" "$zImage" "$zImage" -tile 2x2 -geometry +0+0 "$zNew"
+	set +x > /dev/null
+	return
+}
+alias xev='xev -rv' # reverse video looks cooler
+alias xclip='xclip -selection clipboard'
+alias xdvi='xdvi -bg black -fg bisque' # color names in /usr/share/texlive/texmf-dist/tex/latex/css-colors/css-colors.sty
+# alias xrandr='xrandr --output HDMI-1' # have only the one monitor
+
+# alias yt-dlp='yt-dlp --rm-cache-dir'
+# fixes HTTP Error 403: Forbidden if caused by unexpected interruption
+# following accelerates download via parallel downloads
+# youtube hasn't throttled me yet, but Error 403 is strong
+# --min-split-size must be 1M or higher. Files smaller than 2x min-split-size will be downloaded through a single connection. Modify aria2 source code to allow smaller values.
+# yt-dlp downloads after video, rather than concurrently with video.
+zYtCount=1 # was originally 16
+alias yt-dlp="yt-dlp \
+ --external-downloader=aria2c\
+ --external-downloader-args\
+ '--min-split-size=1M\
+ --max-connection-per-server=$zYtCount\
+ --max-concurrent-downloads=$zYtCount\
+ --split=$zYtCount'"
