@@ -1,16 +1,25 @@
 #!/bin/bash
-# ~/.bashrc.alias -- included by ~/.bashrc
+# ~/.bashrc-alias -- included by ~/.bashrc IF INTERACTIVE
 # by Paul Carman -- copyleft
+
+# use $what to see the definition of a command
+####################################
+
+# !!! MIND aliases/functions when creating them -- this file is local to itself !!!
+# !!! ALL external commands used here should prefix /bin/ !!!
+####################################
 
 # shellcheck disable=SC2155 # Declare and assign separately to avoid masking return values.
 
-# !!! mind aliases/functions when creating them -- this file is local to itself !!!
-# !!! all external commands used here should prefix /bin/ !!!
-# /bin/ seems identical to /bin
-# use $what to see the definition of a command
-
+# This file should only be sourced IF INTERACTIVE
+# These functions/aliases are NOT for export
+# Routines here ASSUME pts (tty) and may output with COLOR
+# These routines are subject to change and meant to be USER USE ONLY
+####################################
 [ dumb != "$TERM" ] && tabs 4 # change tab stop from 8
 
+# Internal use Echo Routines
+####################################
 __EchoColor() { # COLOR MESSAGE...
    zColor="$1"
    shift
@@ -35,6 +44,8 @@ EchoNote() { # NOTE...
    __EchoColor 13 "$@"
 }
 
+# a
+####################################
 apt-cache() {
    case "$1" in
       search) /bin/apt-cache "$@" \
@@ -44,8 +55,12 @@ apt-cache() {
    esac
 }
 
+# b
+####################################
 alias bye='systemctl suspend'
 
+# c
+####################################
 cal() { # compressed/highlighted calendar if vertical
    # ncal -b produces original broad cal output
    if [[ "$*" =~ '-b' ]]; then
@@ -91,6 +106,8 @@ colors() {
 }
 alias cp='cp --archive --one-file-system --interactive --verbose'
 
+# d
+####################################
 depends() { # list recursive package dependencies
   # may use apt-cache rdepends to list reverse dependencies
   apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances "$@" | grep "^\w" | sort -u
@@ -116,6 +133,8 @@ dict() { # use aspell if not found in dictionary
 }
 alias du='du --total --human-readable --summarize'
 
+# e
+####################################
 enscript() { # proper use enscript probably uses configuration files
    local zOptions
    while [[ - = "${1:0:1}" ]]; do
@@ -140,6 +159,8 @@ enscript() { # proper use enscript probably uses configuration files
 	done
 }
 
+# f
+####################################
 feh() {
    # --process-id %V is probably obtainable from predefined constant $PPID.
    # --fullscren prohibits window resizing (keyboard shortcut f)
@@ -163,7 +184,7 @@ feh() {
 }
 ff() { # play a list of songs with -autoexit
    readarray -t -d '' zSongs \
-             < <(find "$@" -type f -print0 | sort -Vz)
+             < <(/bin/find "$@" -type f -print0 | sort -Vz)
    printf '%s\n' "${zSongs[@]}"
    for zSong in "${zSongs[@]}"; do
       /bin/ffplay -autoexit -v quiet "$zSong"
@@ -181,9 +202,43 @@ find() {
       -regextype posix-extended \
       "${@:2}"
 }
+findinode() { # INODE_NUMBER|FILE_NAME...
+   local zDev zNode
+   for z; do
+      if [[ "$z" =~ ^[0-9]+$ ]]; then
+         zNode="$z"
+      else
+         zNode=$(stat --printf '%i\n' "$z")
+      fi
+      zDev=mountdev "$zNode"
+      sudo debugfs -R 'ncheck INODE' "$zDev"
+   done
+}
 
+# g
+####################################
+__git-contains-option() { # POSSIBLE_OPTION...
+   local z
+   for z; do
+      [[ '-' = "${z:0:1}" ]] && exit
+   done
+   return 1
+}
+git-clone() { # REPOSITORY [GITHUB_USERNAME:-PaulCarmanPro]
+   if [[ 2 -lt "$#" ]] || __git-contains-option "$@"; then
+      EchoErr "bashrc git-clone REPOSITORY [GITHUB_USERNAME:-PaulCarmanPro]" \
+              "Clone a repositry into a child directory." \
+              "Assgin url via git-remote." \
+              "Note: You might want to use $ git clone..."
+   else
+      /bin/git clone --verbose \
+               "https://github.com/${2:-PaulCarmanPro}/$1.git"
+      cd "$1" || return
+      git-remote "$1"
+   fi
+}
 git-push() { # [REASON\n\nDETAIL:-update]
-   if [[ '-' = "${1:0:1}" || 1 -lt "$#" ]]; then
+   if [[ 1 -lt "$#" ]] || __git-contains-option "$@"; then
       EchoErr "bashrc git-push [REASON:-update]" \
               "Add all new files, commit all changed files, pull, and push." \
               "Note: You might want to use $ git push..."
@@ -205,10 +260,10 @@ git-push() { # [REASON\n\nDETAIL:-update]
       fi
    fi
 }
-git-remote() { # [USERNAME:-PaulCarmanPro]
+git-remote() { # [GITHUB_USERNAME:-PaulCarmanPro]
    # assign the url -- should automate this in git-push
-   if [[ '-' = "${1:0:1}" || 1 -lt "$#" ]]; then
-      EchoErr "bashrc git-remote [USERNAME:-PaulCarmanPro]" \
+   if [[ 1 -lt "$#" ]] || __git-contains-option "$@"; then
+      EchoErr "bashrc git-remote [GITHUB_USERNAME:-PaulCarmanPro]" \
               "Sets the URL origin into github.com." \
               "Note: You might want to use $ git remote..."
    else
@@ -225,6 +280,8 @@ groups() {
 	/bin/id --groups --name "$USER" | tr ' ' $'\n' | sort --version-sort | tr $'\n' ' ' | sed 's/ $/\n/'
 }
 
+# i
+####################################
 identify() {
    if [[ 1 -eq "$#" ]]; then
       echo "Shortened output... @see what identify..."
@@ -247,6 +304,8 @@ ip() {
 }
 alias journalctl='journalctl --reverse'
 
+# l
+####################################
 l() {
 	# cause hidden files to be listed first and hide the totalsize
    # FUTURE : put the total between the hidden files and the visible files
@@ -314,28 +373,56 @@ lsusb() { # hide all the hubs from the basic list
    fi
 }
 
+# m
+####################################
 alias mkfs.ext4='mkfs.ext4 -z ""' # create an undo file default called mke2fs-device.e2undo for e2undo.
 alias more='less'
-mountpoint() { # DIR... # CODE is DIR count not found
-   # look up the actual mounted /dev file
-   local -i zCode=0 # /bin/mountpoint returns code 1 if not found
-   local zFsdev zDir
-   for zDir in "$@"; do
-      # color 68 should come from tr ':' '\n' <<< "$LS_COLORS" | sed -nE '/bd=.*/{p;q}'
-      local zName="$(tput setaf 68)$zDir$(tput sgr0)"
-      [[ -h "$zDir" ]] \
-         && zName+=" $(tput setaf 11)-> $(realpath "$zDir")$(tput sgr0)"
-      if zFsdev=$(/bin/mountpoint --fs-devno "$zDir") && [[ "$zFsdev" ]]; then
-         printf '%s ' "$zName"
-         local zDriverId=$(cut -d: -f1 <<< "$zFsdev") # 'file system' uniques a driver
-         local zDeviceId=$(cut -d: -f2 <<< "$zFsdev") # 'device number' is used by the driver to unique a device
-         # shellcheck disable=SC2012 # use find instead of ls
-         local zEntry=$(ls -la /dev | sed -nE "s/^([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+($zDriverId,[[:space:]]*${zDeviceId}[[:space:]]+)(.*)/\1 \2 \3 \4 $zFsdev \6/p")
-         if [[ "$zEntry" ]]; then
-            printf '%s\n' "$zEntry"
-         else
-            printf '%s\n' "$zFsdev virtual device"
-         fi
+mountdev() { # [-f FILE|MOUNTPOINT]
+   # stdout EMPTY without error means VIRTUAL device (not in /dev)
+   # if MOUNTPOINT (not -f is specified) then error if not directly a mountpoint
+   # major number = driver (0=normal file)
+   # minor number = device (0=normal file)
+   # if major = 0 && minor != 0 then VIRTUAL device
+   local zId
+   if [[ '-f' = "$1" ]]; then
+      shift
+      # code 1 = file not found
+      zId=$(stat --printf '%Hd:%Ld' "$1") || return
+   else
+      # mountpoint will error if not a mountpoint
+      # code 32 = not a mountpoint
+      # code 1 = file not found
+      zId=$(/bin/mountpoint --fs-devno "$1") || return
+   fi
+   [[ 1 -lt "$#" ]] \
+      && EchoErr "Ignoring extra arguments." \
+                 "Only 1 -f FILE or MOUNTPOINT may be considered."
+   # no output + code 0 = virtual device
+   [[ "$zId" =~ ^0:[^0] ]] && return
+   # locate device for major:minor via a search of /dev
+   local zDev=$(stat --printf '%Hr:%Lr %n\n' /dev/* \
+                   | /bin/sed -nE "s/^$zId //p")
+   [[ "$zDev" ]] \
+      && printf '%s\n' "$zDev" \
+      && return
+   EchoErr "Could not locate driver:device ${zId@Q}."
+   return 2
+}
+mountpoint() { # [-c] DIR...
+   # look up the mounted /dev file
+   local -i zCode
+   local zDev zPoint
+   for zPoint; do
+      if zDev=$(mountdev zPoint); then
+         # @see $LS_COLORS 'bd=.*'
+         printf '%s ' "${zDev:-VIRTUAL}"
+         tput setaf 68
+         printf '%s' "$zPoint"
+         tput sgr0
+         [[ -h "$zPoint" ]] \
+            && tput setaf 11 \
+            && printf ' -> %s' "$(realpath "$zPoint")" \
+            && tput sgr0
       else
          zCode+=1
       fi
@@ -348,12 +435,16 @@ alias mupdf='mupdf 2>/dev/null -r 230'
 alias mutt='neomutt'
 alias mv='mv --interactive --verbose'
 
+# n
+####################################
 neomutt() {
    export ESCDELAY=0 # default 1000, but now used instead of ^g
    /bin/neomutt "$@"
 }
 alias netstat='netstat --protocol=inet --program --timers'
 
+# p
+####################################
 alias pgrep='pgrep --list-full'
 alias ping='ping -v -c6'
 pman() { # python man
@@ -399,9 +490,13 @@ ps() {
 }
 alias py='python3' # python lacks the ability to use the latest
 
+# r
+####################################
 alias rm='rm --interactive --one-file-system --recursive --verbose'
 alias rsync='rsync --archive --itemize-changes' # --checksum fixes date issues with vfat destination
 
+# s
+####################################
 scan() {
    if [[ 0 -eq $# ]]; then
       echo 'scanimage FILENAME
@@ -419,12 +514,16 @@ alias screenshot='scrot --select --quality 100'
 alias shutdown='shutdown +0' # immediate
 alias slimjet='flashpeak-slimjet' # must use startup script
 
+# t
+####################################
 alias top='htop' # pcp top is supposed to be configurable?
 alias tree='tree -aChv --du' # list all with human readable sizes accumulated for directories
 alias traceroute='traceroute -n' # do not attempt to resolve DNS on every router
 alias uptime='uptime --since'
 alias unit='units -v1'
 
+# w
+####################################
 what() { # COMMAND...
    local zNever=1 # no answer was ever found
    while [[ 1 -le "$#" ]]; do
@@ -566,11 +665,15 @@ alias wget='wget --continue --convert-links --force-directories --limit-rate=20K
 # --wait = niceness pause between retrievals
 # --xattr = store URL and the Referer HTTP header value (if used) in file's extended attributes
 
+# x
+####################################
 alias xev='xev -rv' # reverse video looks cooler
 alias xclip='xclip -selection clipboard' # always using clipboard (not primary or secondary)
 alias xdvi='xdvi -bg black -fg bisque' # color names in /usr/share/texlive/texmf-dist/tex/latex/css-colors/css-colors.sty
 # alias xrandr='xrandr --output HDMI-1' # have only the one monitor
 
+# y
+####################################
 # alias yt-dlp='yt-dlp --rm-cache-dir'
 # fixes HTTP Error 403: Forbidden if caused by unexpected interruption
 zYtCount=16 # was originally 16
