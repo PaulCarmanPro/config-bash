@@ -1,0 +1,6 @@
+#! /bin/bash
+
+# config-bash/INSTALL
+
+dSource="$(dirname -- "${BASH_SOURCE[0]}")"
+MakeLinks "$HOME" "$dSource/home"

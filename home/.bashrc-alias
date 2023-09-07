@@ -18,31 +18,7 @@
 ####################################
 [ dumb != "$TERM" ] && tabs 4 # change tab stop from 8
 
-# Internal use Echo Routines
-####################################
-__EchoColor() { # COLOR MESSAGE...
-   zColor="$1"
-   shift
-   [[ "$zColor" ]] && tput setaf 1
-   printf '!!!'
-   [[ "$zColor" ]] && tput sgr0
-   printf '%s.%s: ' \
-          "$(basename -- "${BASH_SOURCE[0]}")" \
-          "${FUNCNAME[2]}"
-   [[ "$zColor" ]] && tput setaf "$zColor"
-   printf '%s\n' "$1"
-   [[ 1 -lt "$#" ]] \
-      && printf '%s\n' "${@:2}"
-   [[ "$zColor" ]] && tput sgr0
-}
-
-EchoErr() { # ERROR...
-   __EchoColor 9 "$@" >&2
-}
-
-EchoNote() { # NOTE...
-   __EchoColor 13 "$@"
-}
+. "$(which Echo.sh)"
 
 # a
 ####################################
@@ -525,11 +501,11 @@ alias unit='units -v1'
 # w
 ####################################
 what() { # COMMAND...
-   local zNever=1 # no answer was ever found
+   local -i zCode=0 # how many not found
    while [[ 1 -le "$#" ]]; do
       local zCmd="$1"
       shift
-      local zFound=1 # no answer was found
+      local zFound # no answer was found # examined by whatPackage
 	   if [[ "$zCmd" =~ '*' ]]; then # search pattern in $PATH
 		   # the -P ignores links... good for /bin and /sbin,, but bad at ~/,local/bin
 		   IFS=:; # shellcheck disable=SC2086
@@ -543,22 +519,20 @@ what() { # COMMAND...
          unset IFS
          [[ "$zAns" ]] \
             && printf '%s\n' "$(sort -V <<< "$zAns")" \
-            && zFound=0
+            && zFound=t
 	   else
-         whatBuiltin "$zCmd" && zFound=0
-         whatDeclare "$zCmd" && zFound=0
-         whatAlias "$zCmd" && zFound=0
-         whatDoc "$zCmd" && zFound=0
-         whatPackage "$zCmd" && zFound=0
-         whatDesc "$zCmd" && zFound=0
-         if [[ 0 -eq "$zFound" ]]; then
-            zNever="$zFound"
-         else
-            &>2 printf "!!! $zCmd not found !!!\n"
+         whatBuiltin "$zCmd" && zFound=t
+         whatDeclare "$zCmd" && zFound=t
+         whatAlias "$zCmd" && zFound=t
+         whatDoc "$zCmd" && zFound=t
+         whatPackage "$zCmd" && zFound=t
+         whatDesc "$zCmd" && zFound=t
+         [[ -z "$zFound" ]] \
+            && zCode+=1 \
+            && EchoErr "Count not find command ${zCmd@Q}."
          fi
-	   fi
-   done
-   return $zNever
+	      done
+   return $zCode
 }
 __what() { # [-r] LABEL RESULT
    if [[ '-r' = "$1" ]]; then
@@ -638,21 +612,25 @@ whatPackage() { # COMMAND
    # use apt-file to search packages (not all that great of an idea)
    local zAns
    tput sc
-   echo -n 'searching packages...'
-   # limit answers heavily via grep
-   zAns=$(/bin/apt-file find "/$1" 2>/dev/null | /bin/grep -E ".*/$1$" )
+   echo -n 'searching files destined for \$PATH or /opt...'
+   zAns="$(/bin/apt-file find --regexp "/$1$" | /bin/grep -E "($(tr : '|' <<< "$PATH")|/opt.*)/$1")"
    tput rc
    tput el
-   [[ "$zAns" ]] || return
-   while IFS= read -r z; do
-      if [[ "$z" =~ ^(.*):\ (.*) ]]; then
-         if [[ -e "${BASH_REMATCH[2]}" ]]; then
-            __what "pkg ${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
-         else
-            __what -r "!pkg ${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+   if [[ "$zAns" ]]; then
+      while IFS= read -r z; do
+         if [[ "$z" =~ ^(.*):\ (.*) ]]; then
+            if [[ -e "${BASH_REMATCH[2]}" ]]; then
+               __what "pkg ${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+            else
+               __what -r "!pkg ${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+            fi
          fi
-      fi
-   done <<< "$zAns"
+      done <<< "$zAns"
+   else
+      [[ -z "$zFound" ]] \
+         && EchoNote "Obscure packages may create executables during install."
+      return 1
+   fi
    return 0
 }
 
