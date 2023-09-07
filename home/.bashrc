@@ -78,14 +78,14 @@ printf '%s...%s T %s...%s\n' \
 					| sed -E 's/.*\((.*),[[:space:]](.*)\)/\1\2/')" \
        "$(tput sgr0)"
 
-# shellcheck source=.bashrc.alias
-. "$HOME/.bashrc.alias"
-# shellcheck source=.bashrc.complete
-. "$HOME/.bashrc.complete" # zsh like completion
+# shellcheck source=.bashrc-alias
+. "$HOME/.bashrc-alias"
+# shellcheck source=.bashrc-complete
+. "$HOME/.bashrc-complete" # better, but still can't prefix command with *
 
 CheckPrompt # function CheckPrompt not found after login shell
 CheckShell # shopt settings do not survive after login shell
-_bcpp --defaults # activate zsh like completion from .bashrc.complete
+_bcpp --defaults # activate better completion from .bashrc-complete
 
 if [[ "-bash" != "$(basename -- "$0")" ]]; then
 	: tput vpa "$(tput lines)" # do not move to bottom of console during login
