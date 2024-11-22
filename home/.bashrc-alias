@@ -5,58 +5,58 @@
 # use $what to see the definition of a command
 ####################################
 
-# !!! MIND aliases/functions when creating them -- this file is local to itself !!!
-# !!! ALL external commands used here should prefix /bin/ !!!
+# !!! MIND aliases/functions when creating them (this file is local to itself)
+# !!! External commands used here should use /usr/bin/
+# !!! NO overload echo or printf (sanity somewhere)
 ####################################
 
+# NOTE: syntax error near unexpected token `(' when unalias needs to happen
 # shellcheck disable=SC2155 # Declare and assign separately to avoid masking return values.
 
-# This file should only be sourced IF INTERACTIVE
-# These functions/aliases are NOT for export
-# Routines here ASSUME pts (tty) and may output with COLOR
-# These routines are subject to change and meant to be USER USE ONLY
+# ONLY source IF INTERACTIVE (not for export).
+# Aliases here ASSUME pts (tty) (force output with COLOR).
 ####################################
-[ dumb != "$TERM" ] && tabs 4 # change tab stop from 8
+[ dumb != "$TERM" ] && tabs 4 # reduce tab stop from 8
 
-. "$(which Echo.sh)"
+# shellcheck source=/home/me/.local/bin/Echo.sh
+. "$(/usr/bin/which Echo.sh)" # standard error reporting include
 
 # a
 ####################################
 apt-cache() {
    case "$1" in
-      search) /bin/apt-cache "$@" \
-                  | /bin/sort -V \
-                  | /bin/grep -E "($(printf '%s|' "${@:2}")|\$)" ;;
-      *) /bin/apt-cache "$@"
+      search) /usr/bin/apt-cache "$@" \
+                  | /usr/bin/sort -V \
+                  | /usr/bin/grep -E "($(printf '%s|' "${@:2}")|\$)" ;;
+      *) /usr/bin/apt-cache "$@"
    esac
 }
 
 # b
 ####################################
-alias bye='systemctl suspend'
+alias bye='shutdown +0 --poweroff'
 
 # c
 ####################################
 cal() { # compressed/highlighted calendar if vertical
    # ncal -b produces original broad cal output
-   if [[ "$*" =~ '-b' ]]; then
-      /bin/ncal "$@"
-   else # this code does not handle horizontal -b output
+   if [[ "$*" = *'-b'* ]]; then
+      /usr/bin/ncal "$@"
+   else # vertical output
       # first month does not need compressed
-      # each day is given space for two digits unless in first row of month
-      # month name starts on same column as single digit
-      # number of spaces between months varies
+      # each day gets space for two digits unless in first row of month
+      # month name starts close to single digit
       # ncal outputs a seven line rectangle
       # pty inserts carriage return (0x0d) before each newline (0x0a).
       local zColorCode=$'\x1b[^m]+m'
       local zDayNum="($zColorCode)?[ 0-9][0-9]($zColorCode)?"
       local zDayName="($zColorCode..$zColorCode|..)"
-      local zBetweenMonthsInclusive="([0-9])   +( $zDayNum )"
+      local zBetweenMonthsInclusive="($zDayNum)   +( $zDayNum )"
       local zMonthTitle='([[:alpha:]]+ [0-9]{4})'
-      pty /bin/ncal -A1 -B1 "$@" \
-         | /bin/tr -d '\r' \
-         | /bin/sed -E "#
-; s:$zBetweenMonthsInclusive:\1\2:g
+      pty /usr/bin/ncal -A1 -B1 "$@" \
+         | /usr/bin/tr -d '\r' \
+         | /usr/bin/sed -E "#
+; s:$zBetweenMonthsInclusive:\1\4:g
 ; s:^ *($zMonthTitle):\1:
 ; s:(  ( *$zMonthTitle)):\2:g
 ; s:($zMonthTitle) *$:\1:
@@ -64,135 +64,252 @@ cal() { # compressed/highlighted calendar if vertical
 ; s:^$zDayName(.*) $:\1\2\1:
 ; s:( [0-9][0-9])\1:\1:g
 "
+      # remove carriage returns ??? don't see any \r in the source
       # remove extra space between months
       # remove space before month title (misaligns titles)
       # remove extra space between month titles (misaligns titles)
-      # remove spaces after moth titles
+      # remove spaces after month titles
       # highlight current day of week
       # copy day of week to end of line
       # remove duplicate week numbers (if -w is used)
    fi
 }
-alias calligra='QT_SCALE_FACTOR=2 calligra'
-alias calligrasheets='QT_SCALE_FACTOR=2 calligrasheets'
 colors() {
-	for i in {0..255}; do
-		echo "$(tput setaf "$i")tput setaf $i$(tput sgr0)"
-	done
+   for i in {0..255}; do
+      echo "$(/usr/bin/tput setaf "$i")tput setaf $i$(/usr/bin/tput sgr0)"
+   done
 }
-alias cp='cp --archive --one-file-system --interactive --verbose'
+cp() {
+   local zSudo
+   [[ '--sudo' = "$1" ]] && zSudo=sudo && shift
+   $zSudo /usr/bin/cp --archive --one-file-system --interactive --verbose "$@"
+}
 
 # d
 ####################################
+declare dgrep_default='/usr/share/doc' # default directory = document directory
+docgrep() { # sorted grep for searching installed documentation.
+   # made for WhatDoc()
+   local zArgument
+   local -i zKeep=0
+   for zArgument; do
+      zKeep+=1
+      case "$zArgument" in
+         -f|--file*|--) break ;;
+         -*) continue ;;
+         *) break ;;
+      esac
+   done
+   local -a zFiles
+   if [[ -z "$dgrep_default" ]]; then
+      # who cares because there is nothing to clip
+      zFiles=("${@:$((1+zKeep))}")
+   elif [[ "$#" -eq "$zKeep" ]]; then
+      # no search location specified
+      # grep -r causes default place to search to become $PWD
+      zFiles=("$dgrep_default")
+   else
+      # multiple search locations specified - keep clipboard
+      for zFile in "${@:$((1+zKeep))}"; do
+         [[ '/' = "${zFile:0:1}" ]] \
+            || zFile="$dgrep_default/$zFile"
+         zFiles+=("$zFile")
+      done
+   fi
+   tput sc
+   printf '%s' "grep -lr..."
+   local zList="$(/usr/bin/grep -lr "${@:1:$zKeep}" "${zFiles[@]}" | sort -V)"
+   tput rc
+   tput ed
+   if [[ "$zList" ]]; then
+      # deal with color sequences
+      local zCommon="$(/usr/bin/sed -e '$!{N;s/^\(.*\).*\n\1.*$/\n\1/;D;}' \
+            < <(sed -E "s|$dTerm_regex||g" <<< "$zList"))"
+      # shellcheck disable=SC2001 # cannot use shell ${\\}
+      sed -E "s|^(($dTerm_regex)*)(.{${#zCommon}})|\3\1|" <<< "$zList"
+      printf '%s\n' "xclip -selection clipboard <<< $zCommon"
+      1>/dev/null /usr/bin/xclip -selection clipboard < <(printf '%s' "$zCommon")
+   else
+      printf 'Not found in %s\n' "${zFiles[@]}"
+   fi
+}
 depends() { # list recursive package dependencies
   # may use apt-cache rdepends to list reverse dependencies
   apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances "$@" | grep "^\w" | sort -u
 }
 alias dd='sudo dd bs=8M status=progress'
 df() { # sort output leaving header line
-	/bin/df --human-readable \
+   /usr/bin/df --human-readable \
                --output=target,fstype,size,pcent,avail,source "$@" \
-		| awk 'NR<2{print $0;next}{print $0|"sort"}END{close("sort")}'
+      | awk 'NR<2{print $0;next}{print $0|"sort"}END{close("sort")}'
 }
-dict() { # use aspell if not found in dictionary
-	local zDef
-   if zDef=$(/bin/dict "$@" 2>/dev/null); then
+dict() { # use aspell if not found in dict
+   local zDef
+   if zDef=$(/usr/bin/dict "$@" 2>/dev/null); then
       # emacs Shell mode reports syntax error
       less --force <(printf '%s' "$zDef") # why is --force required ???
    else
-	   tput setaf 15
-	   /bin/aspell pipe <<< "$@" \
-         | /bin/tail -n +2 \
-         | /bin/sed '1s/.*: //'
-	   tput sgr0
+      tput setaf 15
+      /usr/bin/aspell pipe <<< "$@" \
+         | /usr/bin/tail -n +2 \
+         | /usr/bin/sed '1s/.*: //'
+      tput sgr0
    fi
 }
-alias du='du --total --human-readable --summarize'
+alias du='du \
+  --dereference \
+  --human-readable \
+  --one-file-system \
+  --summarize --total'
 
 # e
 ####################################
 enscript() { # proper use enscript probably uses configuration files
+   # /usr/local/share/enscript/afm
+   #   contains font metrics font.afm using ttf2afm (size of each character)
+   #   contains font postscript code font.pfb using ttf2pt1 (draws each character)
+   #   if the files exist , then -v should show "downloading font ..."
    local zOptions
+   local zFont="Courier@12/11"
    while [[ - = "${1:0:1}" ]]; do
       zOptions+=("$1")
       shift
+      [[ -- = "$1" ]] && break
    done
-	for zText in "$@"; do
+   for zText in "$@"; do
       # do not reprocess a pdf or ps
       [[ "$zText" =~ .*"."(pdf|ps) ]] && continue
-		/bin/enscript \
-			--font="Courier@12/11" \
-			--header="\$n|%W|Page \$% of \$=" \
-			--margins=40:40:30:40 \
-			--non-printable-format=caret \
-			--output "$zText.ps" \
-			--tabsize=3 \
-			--word-wrap \
+      /usr/bin/enscript \
+         --font="$zFont" \
+         --header="\$n|%W|Page \$% of \$=" \
+         --margins=40:40:30:40 \
+         --non-printable-format=caret \
+         --output "$zText.ps" \
+         --portrait \
+         --tabsize=3 \
+         --word-wrap \
          "${zOptions[@]}" \
-			"$zText" \
-			&& ps2pdf "$zText.ps" \
-         && /bin/rm -f "$zText.ps"
-	done
+         "$zText" \
+         && ps2pdf "$zText.ps" \
+         && /usr/bin/rm -f "$zText.ps"
+   done
+}
+# gio set myfile.pdf metadata::evince::continuous 1
+# gio set myfile.pdf metadata::evince::dual-page 0
+# gio set myfile.pdf metadata::evince::sizing_mode: fit-page
+evince() {
+   /bin/evince --fullscreen "$@"
 }
 
 # f
 ####################################
+alias fdupes='fdupes --noempty'
+if hash feh-integrator 2>/dev/null; then
+   _feh_action=(--action ';[feh-integrator]feh-integrator %F')
+else
+   _feh_action=()
+   >&2 echo "!!! ${BASH_SOURE[0]}:feh() Could not hash feh-integrator"
+fi
+if ! hash exiftool 2>/dev/null; then
+   _feh_info=()
+   >&2 echo "!!! ${BASH_SOURE[0]}:feh() Could not hash exiftool"
+else
+   _feh_info=(--info ';exiftool
+      --*AccessDate*
+      --ComponentsConfiguration
+      --Compression
+      --Contrast
+      --CustomRendered
+      --DateTimeOriginal
+      --DeviceSettingDescription
+      --DigitalZoomRatio
+      --EncodingProcess
+      --*Exif*
+      --ExposureCompensation
+      --ExposureMode
+      --FilePermissions
+      --FileSource
+      --*FileType* %F
+      --GainControl
+      --ImageDescription
+      --ImageHeight
+      --ImageWidth
+      --*Index
+      --*Inode*
+      --*Make*
+      --ModifyDate
+      --Saturation
+      --SceneType
+      --SceneCaptureType
+      --SensingMethod
+      --Sharpness
+      --SubjectDistanceRange
+      --SubSec*
+      --Thumbnail*
+      --*Version*
+      --YCbCr* | tac')
+fi
+# --process-id %V is probably obtainable from predefined constant $PPID.
+# --fullscren prohibits window resizing (keyboard shortcut f)
+# feh processid good for keypress "f" creates original/feh_PID_ID_filelist
 feh() {
-   # --process-id %V is probably obtainable from predefined constant $PPID.
-   # --fullscren prohibits window resizing (keyboard shortcut f)
    /bin/feh \
-      --action ';fehaction --filename %F --filelist %L --filelist-count %l --image-format %t --filelist-index %u --image-height %h --image-width %w --image-size-human %S --process-id %V' \
+      "${_feh_action[@]}" \
+      --auto-reload \
       --auto-zoom \
       --borderless \
+      --cache-size 1024 \
+      --caption-path .caption \
+      --draw-actions \
+      --draw-filename \
       --draw-tinted \
       --edit \
-      --font DejaVuSansMono/16 \
+      --font DejaVuSansMono/18 \
       --fontpath /usr/share/fonts/truetype/dejavu \
       --force-aliasing \
       --fullscreen \
-      --info "fehaction --info  -F %F" \
+      "${_feh_info[@]}" \
       --insecure \
       --image-bg checks \
       --keep-http \
       --no-jump-on-resort \
+      --on-last-slide hold \
       --scale-down \
-      --sort=filename "$@"
+      --sort=filename \
+      "$@"
 }
-ff() { # play a list of songs with -autoexit
+
+ff() { # quiet ffplay a list using -autoexit
    readarray -t -d '' zSongs \
-             < <(/bin/find "$@" -type f -print0 | sort -Vz)
-   printf '%s\n' "${zSongs[@]}"
+             < <(/usr/bin/find "$@" -type f -print0 | sort -Vz)
    for zSong in "${zSongs[@]}"; do
-      /bin/ffplay -autoexit -v quiet "$zSong"
+      printf '%s' "$zSong"
+      # ffplay emits a carriage return
+      /usr/bin/ffplay -autoexit -v quiet "$zSong"
    done
 }
-alias ffcd='cd "$(dirname "$(fflog)")"'
+alias ffcd='cd "$(/usr/bin/dirname "$(fflog)")"'
+# can use *frames instead of *packets to get same result, but it is slower
+alias ffframe='ffprobe -v error -select_streams v:0 -count_packets -show_entries stream=nb_read_packets -of csv=p=0'
 alias ffhide='mv -v "$(fflog)" "$(dirname "$(fflog)")/.$(basename "$(fflog)")"'
 alias ffmpeg='ffmpeg -v fatal -stats'
 alias ffplay='ffplay -v 24 -stats'
 alias ffprobe='ffprobe -hide_banner'
-find() {
-   /bin/find \
-      -L "$1" \
+find() { # use of -L disables -type l
+   /usr/bin/find \
+      "$1" \
       -xdev \
       -regextype posix-extended \
       "${@:2}"
+   # -L follow symbolic links
+   # -xdev stays on device (does not search other mounts)
+   # -regextype ... usually not aliased to avoid bad habits, but this option is long
 }
-findinode() { # INODE_NUMBER|FILE_NAME...
-   local zDev zNode
-   for z; do
-      if [[ "$z" =~ ^[0-9]+$ ]]; then
-         zNode="$z"
-      else
-         zNode=$(stat --printf '%i\n' "$z")
-      fi
-      zDev=mountdev "$zNode"
-      sudo debugfs -R 'ncheck INODE' "$zDev"
-   done
-}
+alias free='free --human --si'
 
 # g
 ####################################
+# the git stuff is used more as a reference than in practice
 __git-contains-option() { # POSSIBLE_OPTION...
    local z
    for z; do
@@ -207,11 +324,19 @@ git-clone() { # REPOSITORY [GITHUB_USERNAME:-PaulCarmanPro]
               "Assgin url via git-remote." \
               "Note: You might want to use $ git clone..."
    else
-      /bin/git clone --verbose \
+      /usr/bin/git clone --verbose \
                "https://github.com/${2:-PaulCarmanPro}/$1.git"
       cd "$1" || return
       git-remote "$1"
    fi
+}
+git-commit() { # [REASON\n\nDETAIL:-update]
+   EchoNote 'git commit --all --message...'
+   local zMsg=$(/usr/bin/git commit \
+                         --all \
+                         --verbose \
+                         --message "${1:-update}")
+   EchoNote "$(/usr/bin/sed '/^$/d' <<< "$zMsg")"
 }
 git-push() { # [REASON\n\nDETAIL:-update]
    if [[ 1 -lt "$#" ]] || __git-contains-option "$@"; then
@@ -220,18 +345,19 @@ git-push() { # [REASON\n\nDETAIL:-update]
               "Note: You might want to use $ git push..."
    else
       EchoNote 'git add --all'
-      if /bin/git add --all --verbose \
+      if /usr/bin/git add --all --verbose \
             && EchoNote 'git pull --verbose...' \
-            && /bin/git pull --verbose; then
+            && /usr/bin/git pull --verbose; then
+         git-commit
          EchoNote 'git commit --all --message...'
-         local zMsg=$(/bin/git commit \
+         local zMsg=$(/usr/bin/git commit \
                                --all \
                                --verbose \
                                --message "${1:-update}")
          EchoNote "$(sed '/^$/d' <<< "$zMsg")"
          if ! [[ "$zMsg" =~ 'Your branch is up to date' ]]; then
             EchoNote 'git push...'
-            /bin/git push --verbose
+            /usr/bin/git push --verbose
          fi
       fi
    fi
@@ -246,14 +372,17 @@ git-remote() { # [GITHUB_USERNAME:-PaulCarmanPro]
       if [[ ! -e "$PWD/.git" ]]; then
          Error "\$PWD does not contain .git ($PWD)"
       else
-         /bin/git remote --verbose set-url origin \
+         /usr/bin/git remote --verbose set-url origin \
              "git@github.com:PaulCarmanPro/$(basename "$PWD").git"
       fi
    fi
 }
+alias git-status='/usr/bin/git status --branch --short'
 alias grep='grep --color=always --text'
-groups() {
-	/bin/id --groups --name "$USER" | tr ' ' $'\n' | sort --version-sort | tr $'\n' ' ' | sed 's/ $/\n/'
+groups() { # sorted one-liner
+   /usr/bin/id --groups --name "$USER" \
+      | tr ' ' $'\n' | sort --version-sort \
+      | tr $'\n' ' ' | /usr/bin/sed 's/ $/\n/'
 }
 
 # i
@@ -261,21 +390,35 @@ groups() {
 identify() {
    if [[ 1 -eq "$#" ]]; then
       echo "Shortened output... @see what identify..."
-      /bin/identify -verbose "$@" | head -13
+      /usr/bin/identify -verbose "$@" | head -13
    else
-      /bin/identify "$@"
+      /usr/bin/identify "$@"
    fi
 }
-alias inxi='inxi -v8' # maximum verbosity
+inode() { # INODE_NUMBER|FILE_NAME...
+   # find duplicate inodes (hard links)
+   # much faster than find -inum|-samefile, but uses sudo
+   local zDev zNode
+   for z; do
+      if [[ "$z" =~ ^[0-9]+$ ]]; then
+         zNode="$z"
+      else
+         zNode=$(stat --printf '%i\n' "$z")
+      fi
+      zDev=mountdev "$zNode"
+      sudo debugfs -R 'ncheck INODE' "$zDev"
+   done
+}
+alias inxi='inxi -c8 -v8' # maximum verbosity
 iotop() {
    # setting NET_ADMIN does NOT work as described
    sudo /sbin/iotop --accumulated --delay 3 --only
 }
-ip() {
+ip() { # condensed id addr (ip normally demands arguments)
    if [[ 0 -eq $# ]]; then
-      /bin/ip addr | sed -E ':a ; s/^[[:digit:]]+: ([^:]+:) (<[^>]+>)(.*( [[:upper:]]+))*.*/\1\4 \2/ ; :b ; N ; s/\n[[:space:]]+inet( [^ ]+).*$/\1/ ; tb ; s/\n[[:space:]]+.*$// ; tb ; P ; s/.*\n// ; ba'
+      /usr/bin/ip addr | /usr/bin/sed -E ':a ; s/^[[:digit:]]+: ([^:]+:) (<[^>]+>)(.*( [[:upper:]]+))*.*/\1\4 \2/ ; :b ; N ; s/\n[[:space:]]+inet( [^ ]+).*$/\1/ ; tb ; s/\n[[:space:]]+.*$// ; tb ; P ; s/.*\n// ; ba'
    else
-      /bin/ip "$@"
+      /usr/bin/ip "$@"
    fi
 }
 alias journalctl='journalctl --reverse'
@@ -283,53 +426,80 @@ alias journalctl='journalctl --reverse'
 # l
 ####################################
 l() {
-	# cause hidden files to be listed first and hide the totalsize
+   # cause hidden files to be listed first and hide the totalsize
    # FUTURE : put the total between the hidden files and the visible files
-	# shellcheck disable=SC2012 # Use find instead of ls to better handle non-alphanumeric filenames.
-	# shellcheck disable=SC2016 # Expressions don't expand in single quotes, use double quotes for that.
-	/bin/ls \
-		--almost-all \
-		--classify \
+   # shellcheck disable=SC2012 # Use find instead of ls to better handle non-alphanumeric filenames.
+   # shellcheck disable=SC2016 # Expressions don't expand in single quotes, use double quotes for that.
+   /usr/bin/ls \
+      --almost-all \
+      --classify \
       --color \
       --dereference-command-line-symlink-to-dir \
-		--format=long \
+      --format=long \
       --group-directories-first \
-		--human-readable \
+      --human-readable \
       --indicator-style=file-type \
-		--time-style="+%y.%m.%d-%H.%M" "$@" \
-      -v \
-		| /bin/sed -nE '/^total.*/d ; /^([^[:blank:]]+[[:blank:]]+){6}(\x1b\[[^m]+m)*\./{p;b 1} ; H ; :1 ${g;s/^\n//;p}'
+      --time-style="+%y.%m.%d-%H.%M" \
+      -v "$@" \
+      | /usr/bin/sed -nE '/^total.*/d ; /^([^[:blank:]]+[[:blank:]]+){6}(\x1b\[[^m]+m)*\./{p;b 1} ; H ; :1 ${g;s/^\n//;p}'
 }
 latex() {
-	# zText.toc is ALWAYS one compilation behind
-	# consider comparison of old/new zText.toc for automatic rebuild when table of contents changes
+   # zText.toc is ALWAYS one compilation behind
+   # consider comparison of old/new zText.toc for automatic rebuild when table of contents changes
    # needs package texlive-latex-base (or will not have pdflatex)
-	for zText in "$@"; do
-		zText="${zText%.ltx}"
-		# old-compilation buffers can cause new-compilation issues
-		/bin/rm -f "$zText.aux"
-		# /bin/pdflatex "%@" | sed -e :A -e 's/([^()]*)//;tA' -e 's/  / /g'
-		# -aux-directory=DIR
-		/bin/pdflatex -output-directory=/tmp "$zText.ltx"
-		# this creates a dvi | ps | pdf -- consider pdflatex
-		#/bin/latex "$zText.ltx" \
-		#	&& dvips "$zText.dvi" \
-		#	&& ps2pdf  "$zText.ps"
-		/bin/mv -f "/tmp/$(basename "$zText").pdf" "$(dirname "$zText")"
-	done
+   for zText in "$@"; do
+      zText="${zText%.ltx}"
+      # old-compilation buffers can cause new-compilation issues
+      /usr/bin/rm -f "$zText.aux"
+      # /usr/bin/pdflatex "%@" | /usr/bin/sed -e :A -e 's/([^()]*)//;tA' -e 's/  / /g'
+      # -aux-directory=DIR
+      /usr/bin/pdflatex -output-directory=/tmp "$zText.ltx"
+      # this creates a dvi | ps | pdf -- consider pdflatex
+      #/bin/latex "$zText.ltx" \
+      #  && dvips "$zText.dvi" \
+      #  && ps2pdf  "$zText.ps"
+      /usr/bin/mv -f "/tmp/$(basename "$zText").pdf" "$(dirname "$zText")"
+   done
 }
-alias less='less --RAW-CONTROL-CHARS' # assist in color display, but less complains
+alias less='less --RAW-CONTROL-CHARS' # pass color codes
+lp() { # lp doesn't print images -- must install cups-filters-core-drivers
+   local -a zOptions
+   while [[ '-' = "${1:0:1}" ]]; do
+      zOptions+=("$1")
+      shift
+      [[ '--' = "$1" ]] && break
+   done
+   local -i zCode=0
+   local zFile zType
+   for zFile in "$@"; do # prints only first file
+      printf '%s\n' "lp${zOptions[*]+ }${zOptions[@]@Q} $zFile"
+      /usr/bin/lp "${zOptions[@]}" "$zFile" 1>/dev/null 2>&1 # fails without code
+      zCode=$?
+      zType=$(file -bi "$zFile")
+      case "$zType" in
+         'image/gif; charset=binary') ;;
+         'image/png; charset=binary') ;;
+         'image'*) # image/jpeg issues
+            >&2 EchoNote '$ convert IN to OUT.png # if image got lost.'
+            >&2 EchoNote '# still searching this problem @see cups notes.'
+      esac
+   done
+   return $zCode
+}
 lpoptions() {
    if [[ 0 = "$#" ]]; then
+      local z
       # list one option per line instead of long space separated list
-      printf '%s' "
--o collate true|false
--o media Letter
-
-"
-      /bin/lpoptions | sed -E 's/([^\]) ([^ ]+=)/\1\n\2/g'
+      readarray -t z < <(/usr/bin/lpoptions \
+                            | /usr/bin/sed -E 's/([^\]) ([^ ]+=)/\1\n\2/g')
+      EchoNote 'option values' "${z[@]}"
+      readarray -t z < ~/.cups/lpoptions
+      #shellcheck disable=SC2088 # tilde does not expand in quotes
+      EchoNote '~/.cups/lpoptions' "${z[@]}"
+      readarray -t z < <(/usr/bin/lpoptions -l)
+      EchoNote 'possibles' "${z[@]}"
    else
-      /bin/lpoptions "$@"
+      /usr/bin/lpoptions "$@"
    fi
 }
 alias lpstat='lpstat -l'
@@ -338,22 +508,35 @@ alias ls='ls \
 --format=vertical \
 --group-directories-first \
 --indicator-style=file-type \
--v'
-alias lsblk='lsblk \
--o FSTYPE,SIZE,FSUSED,NAME,LABEL,MOUNTPOINT,PARTLABEL'
-lsusb() { # hide all the hubs from the basic list
+-v' # -v = natural sort (for version numbers)
+alias lsblk='lsblk -o FSTYPE,SIZE,FSUSED,NAME,LABEL,MOUNTPOINT,PARTLABEL'
+lsusb() { # hide all hubs from the basic list
    if [[ 0 = "$#" ]]; then
-      /bin/lsusb | grep -v '.*[Hh]ub'
+      /usr/bin/lsusb | grep -v '.*[Hh]ub'
    else
-      /bin/lsusb "$@"
+      /usr/bin/lsusb "$@"
    fi
 }
 
 # m
 ####################################
-alias mkfs.ext4='mkfs.ext4 -z ""' # create an undo file default called mke2fs-device.e2undo for e2undo.
+alias mkfs.ext4='mkfs.ext4 -z ""' # create undo file mke2fs-device.e2undo for e2undo.
 alias more='less'
-mountdev() { # [-f FILE|MOUNTPOINT]
+# alias mount='mnt'
+mountpoint() { # DIR...
+   # look up the mounted /dev file
+   local -i zCode
+   local zDev zPoint
+   for zPoint; do
+      if zDev=$(mountpoint__ "$zPoint"); then
+         printf "%s on %s\n" "${zDev:-VIRTUAL}" "$zPoint"
+      else
+         zCode+=1
+      fi
+   done
+   return $zCode
+}
+mountpoint__() { # [-f FILE|MOUNTPOINT]
    # stdout EMPTY without error means VIRTUAL device (not in /dev)
    # if MOUNTPOINT (not -f is specified) then error if not directly a mountpoint
    # major number = driver (0=normal file)
@@ -368,46 +551,25 @@ mountdev() { # [-f FILE|MOUNTPOINT]
       # mountpoint will error if not a mountpoint
       # code 32 = not a mountpoint
       # code 1 = file not found
-      zId=$(/bin/mountpoint --fs-devno "$1") || return
+      zId=$(/usr/bin/mountpoint --fs-devno "$1") || return
    fi
    [[ 1 -lt "$#" ]] \
       && EchoErr "Ignoring extra arguments." \
                  "Only 1 -f FILE or MOUNTPOINT may be considered."
    # no output + code 0 = virtual device
    [[ "$zId" =~ ^0:[^0] ]] && return
-   # locate device for major:minor via a search of /dev
+   # locate device for driver:device via a search of /dev
    local zDev=$(stat --printf '%Hr:%Lr %n\n' /dev/* \
-                   | /bin/sed -nE "s/^$zId //p")
+                   | /usr/bin/sed -nE "s/^$zId //p")
    [[ "$zDev" ]] \
       && printf '%s\n' "$zDev" \
       && return
    EchoErr "Could not locate driver:device ${zId@Q}."
    return 2
 }
-mountpoint() { # [-c] DIR...
-   # look up the mounted /dev file
-   local -i zCode
-   local zDev zPoint
-   for zPoint; do
-      if zDev=$(mountdev zPoint); then
-         # @see $LS_COLORS 'bd=.*'
-         printf '%s ' "${zDev:-VIRTUAL}"
-         tput setaf 68
-         printf '%s' "$zPoint"
-         tput sgr0
-         [[ -h "$zPoint" ]] \
-            && tput setaf 11 \
-            && printf ' -> %s' "$(realpath "$zPoint")" \
-            && tput sgr0
-      else
-         zCode+=1
-      fi
-   done
-   return $zCode
-}
-alias mp='mountpoint'
 alias mp3gain='mp3gain -kpor -sr' # lower gain to avoid clip, output list, preserve timestamp, rewrite mp3, set recalculation flag
-alias mupdf='mupdf 2>/dev/null -r 230'
+alias mupdf='mupdf 2>/dev/null -r 230' # default resolution (magnification)
+alias mupdf-gl='mupdf-gl -J' # disable javascript (malicious abilities)
 alias mutt='neomutt'
 alias mv='mv --interactive --verbose'
 
@@ -415,29 +577,43 @@ alias mv='mv --interactive --verbose'
 ####################################
 neomutt() {
    export ESCDELAY=0 # default 1000, but now used instead of ^g
-   /bin/neomutt "$@"
+   /usr/bin/neomutt "$@"
 }
 alias netstat='netstat --protocol=inet --program --timers'
 
 # p
 ####################################
 alias pgrep='pgrep --list-full'
-alias ping='ping -v -c6'
+ping() {
+   [[ 0 != "$#" ]] || set '9.9.9.9'
+   /usr/bin/ping -v -c6 "$@"
+   local zCode=$?
+   case "$zCode" in
+      0) ;; # success
+      1) ;; # user abort
+      2) # network unreachable
+         /usr/bin/systemctl status networking.service
+         echo 'Might want to sudo systemctl restart networking.service'
+         ;;
+      *) return $zCode
+   esac
+}
+alias play=mpv
 pman() { # python man
    # this interesting code no longer works due to an upgrade
-	f="/usr/lib/python3.10/$1.py"
-	if [[ -e "$f" ]]; then
-		x "$f"
-	else
-		>&2 echo "Did not find ${f@Q}."
-		return 1
-	fi
+   f="/usr/lib/python3.10/$1.py"
+   if [[ -e "$f" ]]; then
+      x "$f"
+   else
+      >&2 echo "Did not find ${f@Q}."
+      return 1
+   fi
    # following code used to be separate
 }
 pman2() { # MODULE[.TOPIC] or TOPIC
    # this was originally called manp, but it is another version of pman
    case $# in
-      1) /bin/python3 <(cat <<EOF
+      1) /usr/bin/python3 <(cat <<EOF
 try: import ${1%%.*}
 except Exception: pass
 help('$1')
@@ -448,8 +624,8 @@ EOF
    esac
 }
 ps() {
-	# @@@ REASSIGN -a TO EXCLUDE THE grep @@@
-	# list processes with job and heirichael information
+   # @@@ REASSIGN -a TO EXCLUDE THE grep @@@
+   # list processes with job and heirichael information
    # shellcheck disable=SC2016 # don't bitch about use of asterisk inside single quotes
    [[ 0 -ne $# ]] \
       && echo '# [...] entries are hidden while rest are chopped @see `what ps`'
@@ -459,9 +635,9 @@ ps() {
       && unset zo \
          || zo="-o user,pid,ppid,pgid,tty,cmd"
    # shellcheck disable=SC2086 # double quote to prevent word splitting
-	/bin/ps -H $zo "$@" \
-      | /bin/cut -c -$(($(tput cols) - 1)) \
-      | /bin/grep -vE '\[.+\]'
+   /usr/bin/ps -H $zo "$@" \
+      | /usr/bin/cut -c -$(($(tput cols) - 1)) \
+      | /usr/bin/grep -vE '\[.+\]'
    # -H Show process hierarchy
 }
 alias py='python3' # python lacks the ability to use the latest
@@ -469,21 +645,74 @@ alias py='python3' # python lacks the ability to use the latest
 # r
 ####################################
 alias rm='rm --interactive --one-file-system --recursive --verbose'
-alias rsync='rsync --archive --itemize-changes' # --checksum fixes date issues with vfat destination
+rcp() { # dry run first, then ask for permission
+   local zChanges
+   { zChanges=$(rsync \
+                   --dry-run --itemize-changes "$@" \
+                   | tee /proc/$$/fd/3 \
+                   | tail -n+2); } 3<&1 # remove header 'sending incremental file list'
+   if [[ -z "$zChanges" ]]; then
+      echo "Already in sync" >&2
+    elif read -r -p "Sync the $(wc -l <<< "$zChanges") files listed ? " \
+         && [[ "$REPLY" =~ [Yy].* ]]; then
+      rsync "$@"
+   fi
+}
+# --update overrulable by --backup
+# cannot sync owner ?
+# --backup default --suffix=~ (without --backup-dir)
+# --fuzzy needs --delete-delay (default --delete-before removes base file before it can be copied/moved)
+# --fuzzy might need --delay-updates to not copy renamed directory
+alias rsync="rsync \
+   --acls \
+   --archive \
+   --backup \
+   --copy-links \
+   --executability \
+   --filter=\"merge $HOME/.rsync-filter\" \
+   --filter=\"dir-merge /.rsync-filter\" \
+   --hard-links \
+   --human-readable \
+   --itemize-changes \
+   --keep-dirlinks \
+   --links \
+   --mkpath \
+   --numeric-ids \
+   --omit-dir-times \
+   --one-file-system \
+   --open-noatime \
+   --partial \
+   --perms \
+   --preallocate \
+   --progress \
+   --sparse \
+   --times \
+   --update \
+   --verbose \
+   --xattrs"
+rsync-pull() { # skip creating new files on the receiver
+   # meant to pull updates from source to git repository.
+   # only files already existing in the receiver repository are updated.
+   # UNTESTED
+   rsync --existing "$@"
+}
+rsync-rmcp() { # replace existing situation (as if rm;cp)
+   rsync --delete --force "$@"
+}
 
 # s
 ####################################
 scan() {
    if [[ 0 -eq $# ]]; then
-      echo 'scanimage FILENAME
-.PBM for black-and-white (--mode Lineart) (do not use -- looks bad and produces a pnm anyway)
-.PGM for grayscale (--mode Gray)
-.PPM for color (--mode Color)
-.TIFF|.PNG|.JPEG (compression level 75)'
-      /bin/scanimage --all-options --dont-scan
+      echo 'scanimage FILENAME.EXTENSION
+  .pbm for black-and-white (--mode Lineart) (do not use -- looks bad and produces a pnm anyway)
+  .pgm for grayscale (--mode Gray)
+  .ppm for color (--mode Color)
+  .tiff|.png|.jpeg|.jpg (compression level 75)'
+      /usr/bin/scanimage --all-options --dont-scan
    else
       # need to use the lesser arguments too
-      /bin/scanimage --progress --resolution 300 -y 280 --mode=Gray --format=pnm -o ${!#}.pgm
+     /usr/bin/scanimage --progress --resolution 300 -y 280 --mode=Gray --format=pnm -o ${!#}.pgm
    fi
 }
 alias screenshot='scrot --select --quality 100'
@@ -493,23 +722,46 @@ alias slimjet='flashpeak-slimjet' # must use startup script
 # t
 ####################################
 alias top='htop' # pcp top is supposed to be configurable?
-alias tree='tree -aChv --du' # list all with human readable sizes accumulated for directories
+tree() { # [+a] DIR...
+   # +a = undo -a = hide hidden files
+   if [[ +a = "$1" ]]; then
+      shift
+      /bin/tree -Chv --du "$@"
+   else
+      /bin/tree -aChv --du "$@"
+   fi
+}
+# -a list all
+# -C color on
+# -h human readable sizes
+# -v verbose
+# --du accumulate directory sizes (requires precalc)
 alias traceroute='traceroute -n' # do not attempt to resolve DNS on every router
-alias uptime='uptime --since'
+
+# u
+####################################
 alias unit='units -v1'
+alias uptime='uptime --since'
 
 # w
 ####################################
-what() { # COMMAND...
+what() { # [-p] COMMAND...
+   # -p = use whatPackage
+   local aWhatPackage
+   [[ '-p' = "$1" ]] \
+      && aWhatPackage=p \
+      && shift
    local -i zCode=0 # how many not found
    while [[ 1 -le "$#" ]]; do
       local zCmd="$1"
       shift
       local zFound # no answer was found # examined by whatPackage
-	   if [[ "$zCmd" =~ '*' ]]; then # search pattern in $PATH
-		   # the -P ignores links... good for /bin and /sbin,, but bad at ~/,local/bin
-		   IFS=:; # shellcheck disable=SC2086
-         local zAns="$(/bin/find \
+      # shellcheck disable=SC2076 # '*' is supposed to be a literal
+      # shellcheck disable=SC2049 # '*' is supposed to be a literal
+      if [[ "$zCmd" =~ '*' ]]; then # search pattern in $PATH
+         # the -P ignores links... good for /bin and /sbin,, but bad at ~/,local/bin
+         IFS=:; # shellcheck disable=SC2086
+         local zAns="$(/usr/bin/find \
                          -L $PATH \
                          -maxdepth 1 \
                          -type f \
@@ -520,47 +772,36 @@ what() { # COMMAND...
          [[ "$zAns" ]] \
             && printf '%s\n' "$(sort -V <<< "$zAns")" \
             && zFound=t
-	   else
+      else
          whatBuiltin "$zCmd" && zFound=t
          whatDeclare "$zCmd" && zFound=t
          whatAlias "$zCmd" && zFound=t
          whatDoc "$zCmd" && zFound=t
-         whatPackage "$zCmd" && zFound=t
+         [[ "$aWhatPackage" ]] && whatPackage "$zCmd" && zFound=t
          whatDesc "$zCmd" && zFound=t
          [[ -z "$zFound" ]] \
             && zCode+=1 \
             && EchoErr "Count not find command ${zCmd@Q}."
-         fi
-	      done
+      fi
+   done
    return $zCode
-}
-__what() { # [-r] LABEL RESULT
-   if [[ '-r' = "$1" ]]; then
-      tput setaf 9
-      shift
-   else
-      tput setaf 10
-   fi
-   printf '%s:' "$1"
-   tput sgr0
-   printf ' %s\n' "$2"
 }
 whatAlias() { # COMMAND
    # use bash alias to determine alias declaration
    local zAlias
    zAlias=$(alias "$1" 2>/dev/null) || return
-   __what 'bash alias' "${zAlias#alias }"
+   EchoLabeled 'bash alias' -- "${zAlias#alias }"
 }
 whatBuiltin() { # COMMAND
    # check for bash built-in
-   /bin/grep -Fxq "$1" <(compgen -b) || return
-   __what 'bash built-in' "$(help "$1")"
+   /usr/bin/grep -Fxq "$1" <(compgen -b) || return
+   EchoLabeled 'bash built-in' -- "$(help "$1")"
 }
 whatDeclare() { # COMMAND
    # use bash declare to determine function declaration
    local zDeclare
    zDeclare=$(declare -f "$1") || return
-   __what 'bash function' "$zDeclare"
+   EchoLabeled 'bash function' -- "$zDeclare"
 }
 whatDesc() { # COMMAND
    # use whatis to attain a one-liner description
@@ -568,43 +809,42 @@ whatDesc() { # COMMAND
    zDesc=$(whatis "$1" 2>/dev/null | tr -s ' ') || return
    [[ "$zDesc" ]] || return # whatis does not produce an error code
    [[ "$zDesc" =~ ^([^-]+)" - "(.+)$ ]]
-   __what "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+   EchoLabeled "${BASH_REMATCH[1]}" -- "${BASH_REMATCH[2]}"
 }
 whatDoc() { # COMMAND
    # display info files after man files, but do not show duplicates
    local zCode=1
    local z zMans zInfo
-   zInfo=$(/bin/info -w "$1" 2>/dev/null | grep -xv '\*manpages\*' )
+   zInfo=$(/usr/bin/info -w "$1" 2>/dev/null | grep -xv '\*manpages\*' )
    # use whereis to locate binaries and man file locations
    # man files commonly in /usr/share/man/ @see /etc/manpath.config
    while read -r zHeader zArgs; do
-      ### deliberately uses local alias-function `l' to list files
-		if zMans=$(/bin/whereis $zArgs "$1") \
+      # shellcheck disable=SC2086 # double quote $zArgs
+      if zMans=$(/usr/bin/whereis $zArgs "$1") \
             && zMans=${zMans/$1:} \
             && [[ "$zMans" ]]; then
-         local z
-         for z in ${zMans/ }; do
-            [[ "$zInfo" != "$z" ]] \
-               && __what "$zHeader" "$(l -d "$z")" \
+         local zMan
+         for zMan in ${zMans/ }; do
+            # deliberately uses local alias-function `l' to list files
+            [[ "$zInfo" != "$zMan" ]] \
+               && EchoLabeled "$zHeader" -- "$(l -d "$zMan")" \
                && zCode=0
          done
       fi
    done <<< $'exec -b\nman -m\ncode -s' # list of [HEADER whtereis_OPTIONS]...
    # display info files
    if [[ "$zInfo" ]]; then
-      __what 'info' "$(l -d "$zInfo")"
+      EchoLabeled 'info' -- "$(l -d "$zInfo")"
       zCode=0
    fi
    # other documentation
    local zDoc="/usr/share/doc/$1"
    if [[ -e "$zDoc" ]]; then
+      EchoLabeled 'docgrep $ xclip -selection clipboard' -- "$zDoc"
+      1>/dev/null /usr/bin/xclip -selection clipboard <(printf '%s' "$zDoc")
       local zHtml="$zDoc/index.html"
-      if [[ -e "$zHtml" ]]; then
-         __what 'html' "$zHtml (clipboard)"
-         printf '%s' "$zHtml" | xclip -selection clipboard
-      else
-         __what 'doc' "$zDoc"
-      fi
+      [[ -e "$zHtml" ]] \
+         && EchoLabeled 'index.html' -- "$zHtml"
    fi
    return $zCode
 }
@@ -612,17 +852,18 @@ whatPackage() { # COMMAND
    # use apt-file to search packages (not all that great of an idea)
    local zAns
    tput sc
-   echo -n 'searching files destined for \$PATH or /opt...'
-   zAns="$(/bin/apt-file find --regexp "/$1$" | /bin/grep -E "($(tr : '|' <<< "$PATH")|/opt.*)/$1")"
+   # shellcheck disable=SC2016 # $PATH is supposed to be literal
+   echo -n 'searching files destined for $PATH or /opt...'
+   zAns="$(/usr/bin/apt-file find --regexp "/$1$" | /usr/bin/grep -E "($(tr : '|' <<< "$PATH")|/opt.*)/$1")"
    tput rc
    tput el
    if [[ "$zAns" ]]; then
       while IFS= read -r z; do
          if [[ "$z" =~ ^(.*):\ (.*) ]]; then
             if [[ -e "${BASH_REMATCH[2]}" ]]; then
-               __what "pkg ${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+               EchoLabeled "pkg ${BASH_REMATCH[1]}" -- "${BASH_REMATCH[2]}"
             else
-               __what -r "!pkg ${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+               EchoLabeled -r "!pkg ${BASH_REMATCH[1]}" -- "${BASH_REMATCH[2]}"
             fi
          fi
       done <<< "$zAns"
@@ -646,23 +887,37 @@ alias wget='wget --continue --convert-links --force-directories --limit-rate=20K
 # x
 ####################################
 alias xev='xev -rv' # reverse video looks cooler
-alias xclip='xclip -selection clipboard' # always using clipboard (not primary or secondary)
+alias xclip='xclip -selection clipboard' # always using clipboard (not primary or secondary) and allow `xclip...` to return.
 alias xdvi='xdvi -bg black -fg bisque' # color names in /usr/share/texlive/texmf-dist/tex/latex/css-colors/css-colors.sty
 # alias xrandr='xrandr --output HDMI-1' # have only the one monitor
 
 # y
 ####################################
-# alias yt-dlp='yt-dlp --rm-cache-dir'
-# fixes HTTP Error 403: Forbidden if caused by unexpected interruption
+# Have command ready to go meeding 10-15 seconds between browser request and your youtube-dl request.
+# When audio and video playlists are separate, most addons tend to highlight the video, which leaves you without audio, and you'll have to download and merge that manually.
+#   You'll see multiple m3u8 playlists in the network requests when you load or start a video.
+#   You want the first one. It's often named index or master.
+# --add-header "Origin: https://www.example.com/"
+# Look at browser headers when it initially fetched the playlist URL.
+#   Use developer tools (some extentions lets you copy a pre-made youtube-dl command with all headers, but sometimes they don't pick the right playlist).
+#   Mark the URL in network requests; click on Headers in the tab menu on the right and scroll down until Request Headers.
+#   Most can be ignored, but examine Origin and Authorization.
+#   Origin is common with all requests, but rarely needed when downloading.
+#   Authorization is rare but is needed when it appears.
+#   Use --add-header to add headers other than referer and user-agent.
+# --referer "URL" is the URL in the address bar
+# --rm-cache-dir fixes HTTP Error 403: Forbidden if caused by unexpected interruption
+# --user-agent relayed by https://ifconfig.me/ua
 zYtCount=16 # was originally 16
-#shellcheck disable=SC2139 # this expands when defined, not when executed 
+#shellcheck disable=SC2139 # this expands when defined, not when executed
 alias yt-dlp="yt-dlp \
  --external-downloader=aria2c\
  --external-downloader-args\
  '--min-split-size=1M\
  --max-connection-per-server=$zYtCount\
  --max-concurrent-downloads=$zYtCount\
- --split=$zYtCount'"
+ --split=$zYtCount'\
+ --user-agent='Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0'"
 # accelerates download via parallel downloads
 # youtube hasn't throttled me yet, but Error 403 is strong
 # --min-split-size must be 1M or higher. Files smaller than 2x min-split-size will be downloaded through a single connection. Modify aria2 source code to allow smaller values.
