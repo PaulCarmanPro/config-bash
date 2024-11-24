@@ -156,6 +156,13 @@ dict() { # use aspell if not found in dict
       tput sgr0
    fi
 }
+if ! hash colordiff 2>/dev/null; then
+   >&2 echo "!!! ${BASH_SOURE[0]}:alias diff Could not hash colordiff"
+else
+   diff() {
+      /bin/diff "$@" | colordiff --color=yes
+   }
+fi
 alias du='du \
   --dereference \
   --human-readable \

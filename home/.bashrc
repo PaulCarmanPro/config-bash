@@ -94,9 +94,9 @@ CheckBlesh() { # bash line editor to be sourced
 
 # echo "Forget bash history..." && rm -f ~/.bash_history
 # rm -f ~/.wget-hsts # forget wget secure connections history
-
-[[ "$DISPLAY" && -e ~/.xinitrc ]] \
-   && bash .xinitrc \
+q
+[[ "$DISPLAY" && -e "$HOME/.xinitrc" ]] \
+   && bash "$HOME/.xinitrc" \
    && echo # reapply keyboard speed
 
 if [[ -e /etc/bash_completion ]]; then
