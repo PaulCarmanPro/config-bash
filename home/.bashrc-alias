@@ -159,6 +159,7 @@ dict() { # use aspell if not found in dict
 if ! hash colordiff 2>/dev/null; then
    >&2 echo "!!! ${BASH_SOURE[0]}:alias diff Could not hash colordiff"
 else
+   # consider sdiff pipe and meld(GUI) kcompare(pretty)
    diff() {
       /bin/diff "$@" | colordiff --color=yes
    }
